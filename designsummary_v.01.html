@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>대지면적·용적률 간단 설계개요 계산기</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-top: 4px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 16px;
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <h1>간단 설계개요 계산기</h1>
+
+  <label>
+    대지면적 (㎡)
+    <input id="siteArea" type="number" placeholder="예: 766.7" />
+  </label>
+
+  <label>
+    건폐율 (%)
+    <input id="bcr" type="number" placeholder="예: 60" />
+  </label>
+
+  <label>
+    용적률 (%)
+    <input id="far" type="number" placeholder="예: 600" />
+  </label>
+
+  <button onclick="calculate()">계산하기</button>
+
+  <div id="result" class="result"></div>
+
+  <script>
+    function calculate() {
+      const siteArea = parseFloat(document.getElementById("siteArea").value);
+      const bcr = parseFloat(document.getElementById("bcr").value);
+      const far = parseFloat(document.getElementById("far").value);
+      const resultDiv = document.getElementById("result");
+
+      if (isNaN(siteArea) || isNaN(bcr) || isNaN(far)) {
+        resultDiv.textContent = "모든 값을 숫자로 입력해주세요.";
+        return;
+      }
+
+      // 기본 계산
+      const buildingCoverage = siteArea * (bcr / 100);  // 1층 바닥면적
+      const totalFloorArea = siteArea * (far / 100);    // 총 연면적
+      const floors = Math.ceil(totalFloorArea / buildingCoverage); // 예상 층수 (반올림 올림)
+
+      // 소수점 정리
+      const bcRound = Math.round(buildingCoverage * 10) / 10;
+      const tfaRound = Math.round(totalFloorArea * 10) / 10;
+
+      // 간단 주차대수 예시 (100㎡당 1대 가정)
+      const parking = Math.ceil(tfaRound / 100);
+
+      const text = 
+        `▶ 입력값
+- 대지면적: ${siteArea} ㎡
+- 건폐율: ${bcr} %
+- 용적률: ${far} %
+
+▶ 예상 설계개요(간이)
+- 허용 1층 바닥면적(건축면적): 약 ${bcRound} ㎡
+- 허용 연면적: 약 ${tfaRound} ㎡
+- 예상 층수: 약 ${floors}층
+- 간이 법정 주차대수(100㎡당 1대 가정): 약 ${parking}대
+
+※ 실제 설계·인허가는 관련 법규 및 상세계획 검토 필요`;
+
+      resultDiv.textContent = text;
+    }
+  </script>
+</body>
+</html>
