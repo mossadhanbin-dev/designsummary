@@ -53,18 +53,8 @@
 <body>
   <h1>설계개요 계산기 (84타입 기준)</h1>
 
-  <!-- 1. 대분류 선택 -->
-  <label>
-    대분류
-    <select id="category">
-      <option value="over800">800세대 이상</option>
-      <option value="500to800">500~800세대</option>
-      <option value="under500">500세대 미만</option>
-      <option value="mixedUse">주상복합</option>
-    </select>
-  </label>
+  <!-- 카테고리 선택 삭제, 기본 입력만 남김 -->
 
-  <!-- 2. 기본 입력값 -->
   <label>
     대지면적 (㎡)
     <input id="siteArea" type="number" placeholder="예: 30000" />
@@ -87,8 +77,11 @@
 
   <div class="note">
     ※ 84타입 기준 1세대당 지상연면적 112㎡ 가정.<br>
-    - 44타입, 59타입, 74타입 복합구성은 추후 개발. <br>
-    - 주상복합: 고려할 사항 너무많음. 현재 계산 미지원 (개발 진행중)
+    - 1차로 용적률 기준 연면적에서 세대수(84타입 기준)를 산출하여<br>
+      800세대 이상 / 500~800세대 / 500세대 미만 규모를 자동 분류합니다.<br>
+    - 이후 각 규모별 가정값(복리시설, 지하시설, 주차 효율)을 반영하여<br>
+      지상연면적·지하연면적·세대수·주차대수를 후보정합니다.<br>
+    - 주상복합, 44/59/74 혼합 구성은 추후 개발 예정.
   </div>
 
   <button id="calcBtn">계산하기</button>
@@ -96,90 +89,102 @@
   <div id="result" class="result"></div>
 
   <script>
-    // 카테고리별 가정값
+    // 카테고리별 가정값 (84타입 기준)
     const CATEGORY_CONFIG = {
       over800: {           // 800세대 이상
+        label: "800세대 이상",
         abovePerUnit: 112,
-        extraAboveFacility: 0,   // 고정 지상복리 없음
-        facilityPerUnitB1: 4.1,
-        parkingPerCarB1: 35.6,
+        extraAboveFacility: 0,   // 단지당 지상 복리시설
+        facilityPerUnitB1: 4.1,  // 지하 시설/세대
+        parkingPerCarB1: 35.6,   // 지하 주차장/대
       },
       "500to800": {        // 500~800세대
+        label: "500~800세대",
         abovePerUnit: 112,
         extraAboveFacility: 0,
         facilityPerUnitB1: 3.8,
         parkingPerCarB1: 37.0,
       },
       under500: {          // 500세대 미만
+        label: "500세대 미만",
         abovePerUnit: 112,
         extraAboveFacility: 800,  // 단지당 지상 복리시설 800㎡
         facilityPerUnitB1: 3.5,
         parkingPerCarB1: 39.5,
       },
-      mixedUse: {          // 주상복합: 현재 계산 미사용 (placeholder)
-        abovePerUnit: 112,
-        extraAboveFacility: 0,
-        facilityPerUnitB1: 4.1,
-        parkingPerCarB1: 35.6,
-      },
     };
 
+    // 숫자 포맷
     function formatNumber(x, digits = 1) {
       const m = Math.pow(10, digits);
       return Math.round(x * m) / m;
     }
 
-    function getCategoryLabel(value) {
-      switch (value) {
-        case "over800":  return "800세대 이상";
-        case "500to800": return "500~800세대";
-        case "under500": return "500세대 미만";
-        case "mixedUse": return "주상복합";
-        default:         return "";
+    // 1차 세대수로 자동 카테고리 판정
+    function detectCategory(rawUnits) {
+      if (rawUnits >= 800) {
+        return { key: "over800", label: CATEGORY_CONFIG["over800"].label, rangeText: "800세대 이상급" };
+      } else if (rawUnits >= 500) {
+        return { key: "500to800", label: CATEGORY_CONFIG["500to800"].label, rangeText: "500~800세대급" };
+      } else {
+        return { key: "under500", label: CATEGORY_CONFIG["under500"].label, rangeText: "500세대 미만급" };
       }
     }
 
     function calculateSummary(input) {
-      const { siteArea, far, parkingPerUnit, category } = input;
+      const { siteArea, far, parkingPerUnit } = input;
 
-      const cfg = CATEGORY_CONFIG[category] || CATEGORY_CONFIG["over800"];
-      const ABOVE_PER_UNIT        = cfg.abovePerUnit;
-      const EXTRA_ABOVE_FAC       = cfg.extraAboveFacility;   // 단지당 지상 복리시설
-      const FACILITY_PER_UNIT_B1  = cfg.facilityPerUnitB1;    // 지하 시설/세대
-      const PARKING_PER_CAR_B1    = cfg.parkingPerCarB1;      // 지하 주차장/대
-
-      // 1) 용적률 한도 내 이론상 지상연면적
+      // 1) 용적률 한도 내 이론상 지상연면적 (용적률 × 대지)
       const gfaLimitAbove = siteArea * (far / 100); // ㎡
 
-      // 2) 지상 복리시설 (under500만 800㎡, 나머지는 0) 선점
+      // 2) 1차 추정 세대수 (카테고리 판정용, 복리시설/효율 보정 전)
+      const ABOVE_PER_UNIT_BASE = 112; // 84타입 기준
+      const rawUnits = Math.floor(gfaLimitAbove / ABOVE_PER_UNIT_BASE);
+
+      // 3) 1차 세대수로 규모 자동 분류
+      const cat = detectCategory(rawUnits);
+      const cfg = CATEGORY_CONFIG[cat.key];
+
+      const ABOVE_PER_UNIT       = cfg.abovePerUnit;
+      const EXTRA_ABOVE_FAC      = cfg.extraAboveFacility;  // 단지당 지상 복리시설
+      const FACILITY_PER_UNIT_B1 = cfg.facilityPerUnitB1;   // 지하 시설/세대
+      const PARKING_PER_CAR_B1   = cfg.parkingPerCarB1;     // 지하 주차장/대
+
+      // 4) 카테고리별 지상 복리시설 선점 후, 세대수 재산정 (후보정)
       let gfaForUnits = gfaLimitAbove - EXTRA_ABOVE_FAC;
       if (gfaForUnits < 0) gfaForUnits = 0;
 
-      // 3) 세대수: (세대당 112㎡) 기준, 내림
       const units = Math.floor(gfaForUnits / ABOVE_PER_UNIT);
 
-      // 4) 실제 지상연면적 = 세대수 × 112 + 지상 복리시설
+      // 5) 실제 지상연면적 = 세대수 × 세대당 지상연면적 + 지상 복리시설
       const gfaAbove = units * ABOVE_PER_UNIT + EXTRA_ABOVE_FAC;
 
-      // 5) 지상부 실제 용적률
+      // 6) 지상부 실제 용적률
       const farActual = (gfaAbove / siteArea) * 100;
 
-      // 6) 지하 시설연면적
+      // 7) 지하 시설연면적
       const gfaB1Facility = units * FACILITY_PER_UNIT_B1;
 
-      // 7) 총 주차대수
+      // 8) 총 주차대수
       const totalParking = Math.ceil(units * parkingPerUnit);
 
-      // 8) 지하 주차장 연면적
+      // 9) 지하 주차장 연면적
       const gfaB1Parking = totalParking * PARKING_PER_CAR_B1;
 
-      // 9) 지하 연면적 총합
+      // 10) 지하 연면적 총합
       const gfaBelow = gfaB1Facility + gfaB1Parking;
 
-      // 10) 전체 연면적
+      // 11) 전체 연면적
       const gfaTotal = gfaAbove + gfaBelow;
 
       return {
+        // 1차 추정값
+        gfaLimitAbove,
+        rawUnits,
+        categoryKey: cat.key,
+        categoryLabel: cat.label,
+        categoryRangeText: cat.rangeText,
+        // 후보정 값
         units,
         gfaAbove,
         gfaBelow,
@@ -191,49 +196,44 @@
     }
 
     function onClickCalculate() {
-      const category       = document.getElementById("category").value;
       const siteArea       = parseFloat(document.getElementById("siteArea").value);
-      const bcr            = parseFloat(document.getElementById("bcr").value); // 아직 층수 계산에는 미사용
+      const bcr            = parseFloat(document.getElementById("bcr").value);
       const far            = parseFloat(document.getElementById("far").value);
       const parkingPerUnit = parseFloat(document.getElementById("parkingPerUnit").value);
       const resultDiv      = document.getElementById("result");
-
-      // 주상복합은 아직 계산 안 함
-      if (category === "mixedUse") {
-        const catLabel = getCategoryLabel(category);
-        resultDiv.textContent =
-`▶ 대분류
-- ${catLabel}
-
-현재 주상복합 카테고리는 개발 진행중입니다.
-(향후 상가/업무/주거 비율 및 주차 분리 기준을 반영한 별도 계산 로직이 추가될 예정입니다.)`;
-        return;
-      }
 
       if ([siteArea, far, parkingPerUnit].some(v => isNaN(v))) {
         resultDiv.textContent = "대지면적, 용적률, 세대당 주차대수를 숫자로 입력해주세요.";
         return;
       }
 
-      const summary  = calculateSummary({ siteArea, far, parkingPerUnit, category });
-      const catLabel = getCategoryLabel(category);
+      const summary = calculateSummary({ siteArea, far, parkingPerUnit });
 
       const text =
-`▶ 산정 결과 (84타입 기준)
+`▶ 1차 규모 판정 (용적률 기준, 84타입 가정)
+- 대지면적: ${formatNumber(siteArea, 1)} ㎡
+- 법정 용적률: ${far} %
+- 용적률 한도 지상연면적: 약 ${formatNumber(summary.gfaLimitAbove, 1)} ㎡
+- 84타입 기준 1차 추정 세대수(보정 전): 약 ${summary.rawUnits} 세대
+- 자동 분류 규모: ${summary.categoryRangeText} (${summary.categoryLabel})
+
+▶ 산정 결과 (카테고리별 후보정 반영)
 - 지상연면적: 약 ${formatNumber(summary.gfaAbove, 1)} ㎡
 - 지하연면적: 약 ${formatNumber(summary.gfaBelow, 1)} ㎡
 - 전체연면적: 약 ${formatNumber(summary.gfaTotal, 1)} ㎡
 - 지상부 실제 용적률: 약 ${formatNumber(summary.farActual, 2)} %
-- 84타입 기준 세대수: 약 ${summary.units} 세대
+- 84타입 기준 세대수(후보정): 약 ${summary.units} 세대
 - 총 주차대수: 약 ${summary.totalParking} 대
 
-[카테고리별 가정값]
+[사용한 가정값 (자동 분류된 규모 기준)]
+- 규모 구분: ${summary.categoryLabel}
 - 1세대당 지상연면적: ${summary.cfg.abovePerUnit} ㎡/세대
 - 단지당 지상 복리시설: ${summary.cfg.extraAboveFacility} ㎡
 - 지하 시설연면적: ${summary.cfg.facilityPerUnitB1} ㎡/세대
 - 지하 주차장 면적: ${summary.cfg.parkingPerCarB1} ㎡/대
 
-※ 지구단위계획, 조례, 평형 구성에 따라 실제 값은 달라질 수 있습니다.`;
+※ 1차 세대수는 용적률 한도에서 단순 산출한 값이며,
+   실 설계에서는 지구단위계획, 조례, 평형 구성, 동 배치에 따라 달라질 수 있습니다.`;
 
       resultDiv.textContent = text;
     }
