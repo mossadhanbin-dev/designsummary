@@ -51,9 +51,7 @@
   </style>
 </head>
 <body>
-  <h1>설계개요 계산기 (84타입 기준)</h1>
-
-  <!-- 카테고리 선택 삭제, 기본 입력만 남김 -->
+  <h1>설계개요 계산기 (59/84 타입 혼합)</h1>
 
   <label>
     대지면적 (㎡)
@@ -75,13 +73,20 @@
     <input id="parkingPerUnit" type="number" step="0.1" placeholder="예: 1.3" value="1.3" />
   </label>
 
+  <!-- 84/59 타입 비율 설정 -->
+  <label>
+    84타입 비율 (%)
+    <input id="ratio84" type="number" step="1" placeholder="예: 70 (입주세대의 70%)" value="100" />
+  </label>
+
   <div class="note">
-    ※ 84타입 기준 1세대당 지상연면적 112㎡ 가정.<br>
-    - 1차로 용적률 기준 연면적에서 세대수(84타입 기준)를 산출하여<br>
-      800세대 이상 / 500~800세대 / 500세대 미만 규모를 자동 분류합니다.<br>
-    - 이후 각 규모별 가정값(복리시설, 지하시설, 주차 효율)을 반영하여<br>
-      지상연면적·지하연면적·세대수·주차대수를 후보정합니다.<br>
-    - 주상복합, 44/59/74 혼합 구성은 추후 개발 예정.
+    ※ 기본 가정<br>
+    - 84타입: 지상 112.5㎡/세대, 지하 시설 3.5~4.1㎡/세대 (주차면적 별도산정)<br>
+    - 59타입: 지상 82㎡/세대, 지하 시설 2.5㎡/세대 (주차면적 별도산정)<br>
+    - 84타입 기준 세대수로 단지 규모등급을 3단계로 분류,<br>
+      84/59 비율, 복리시설, 지하시설, 주차 효율, 단지 내 상가 면적을 반영해<br>
+      지상·지하연면적·세대수·주차·상가호실을 후보정합니다.<br>
+    - 단지 내 상가: 100세대당 1호실, 최소 3호실, 전용 10평 + 공용부 = 40㎡/호 기준.<br>
   </div>
 
   <button id="calcBtn">계산하기</button>
@@ -93,51 +98,78 @@
     const CATEGORY_CONFIG = {
       over800: {           // 800세대 이상
         label: "800세대 이상",
-        abovePerUnit: 112,
+        abovePerUnit: 112.5,
         extraAboveFacility: 0,   // 단지당 지상 복리시설
-        facilityPerUnitB1: 4.1,  // 지하 시설/세대
+        facilityPerUnitB1: 4.1,  // 지하 시설/세대 (84 기준)
         parkingPerCarB1: 35.6,   // 지하 주차장/대
       },
       "500to800": {        // 500~800세대
         label: "500~800세대",
-        abovePerUnit: 112,
+        abovePerUnit: 112.5,
         extraAboveFacility: 0,
         facilityPerUnitB1: 3.8,
         parkingPerCarB1: 37.0,
       },
       under500: {          // 500세대 미만
         label: "500세대 미만",
-        abovePerUnit: 112,
-        extraAboveFacility: 800,  // 단지당 지상 복리시설 800㎡
+        abovePerUnit: 112.5,
+        extraAboveFacility: 600,  // 단지당 지상 복리시설 600㎡
         facilityPerUnitB1: 3.5,
         parkingPerCarB1: 39.5,
       },
     };
 
-    // 숫자 포맷
-    function formatNumber(x, digits = 1) {
-      const m = Math.pow(10, digits);
-      return Math.round(x * m) / m;
+    // 59타입 기본 가정
+    const TYPE59 = {
+      abovePerUnit: 82,       // 지상 82㎡/세대
+      facilityPerUnitB1: 2.5, // 지하 시설 2.5㎡/세대 (주차 별도)
+    };
+
+    // 숫자 포맷 (천단위 콤마, 정수/소수점 둘째자리까지)
+    function formatNumberSmart(x) {
+      if (x === null || x === undefined || isNaN(x)) return "-";
+
+      // 소수 둘째자리까지 반올림
+      const rounded2 = Math.round(x * 100) / 100;
+
+      // 정수이면 소수점 없이
+      if (Number.isInteger(rounded2)) {
+        return rounded2.toLocaleString("ko-KR");
+      } else {
+        // 정수가 아니면 소수 둘째자리까지
+        return rounded2.toLocaleString("ko-KR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+      }
     }
 
-    // 1차 세대수로 자동 카테고리 판정
+    // 면적 포맷 (㎡ + 평 병기)
+    function formatArea(m2) {
+      if (m2 === null || m2 === undefined || isNaN(m2)) return "-";
+      const py = m2 / 3.3;  // 1평 ≒ 3.3㎡
+      return `${formatNumberSmart(m2)} ㎡ (${formatNumberSmart(py)} 평)`;
+    }
+
+
+    // 1차 세대수로 자동 카테고리 판정 (84 기준)
     function detectCategory(rawUnits) {
       if (rawUnits >= 800) {
-        return { key: "over800", label: CATEGORY_CONFIG["over800"].label, rangeText: "800세대 이상급" };
+        return { key: "over800", label: CATEGORY_CONFIG["over800"].label };
       } else if (rawUnits >= 500) {
-        return { key: "500to800", label: CATEGORY_CONFIG["500to800"].label, rangeText: "500~800세대급" };
+        return { key: "500to800", label: CATEGORY_CONFIG["500to800"].label };
       } else {
-        return { key: "under500", label: CATEGORY_CONFIG["under500"].label, rangeText: "500세대 미만급" };
+        return { key: "under500", label: CATEGORY_CONFIG["under500"].label };
       }
     }
 
     function calculateSummary(input) {
-      const { siteArea, far, parkingPerUnit } = input;
+      const { siteArea, far, parkingPerUnit, ratio84 } = input;
 
       // 1) 용적률 한도 내 이론상 지상연면적 (용적률 × 대지)
       const gfaLimitAbove = siteArea * (far / 100); // ㎡
 
-      // 2) 1차 추정 세대수 (카테고리 판정용, 복리시설/효율 보정 전)
+      // 2) 1차 추정 세대수 (카테고리 판정용, 전부 84타입 가정)
       const ABOVE_PER_UNIT_BASE = 112; // 84타입 기준
       const rawUnits = Math.floor(gfaLimitAbove / ABOVE_PER_UNIT_BASE);
 
@@ -145,103 +177,188 @@
       const cat = detectCategory(rawUnits);
       const cfg = CATEGORY_CONFIG[cat.key];
 
-      const ABOVE_PER_UNIT       = cfg.abovePerUnit;
+      // 84/59 타입별 면적 가정
+      const ABOVE_PER_UNIT_84 = cfg.abovePerUnit;      // 112.5
+      const ABOVE_PER_UNIT_59 = TYPE59.abovePerUnit;   // 82
+
+      const FACILITY_PER_UNIT_84 = cfg.facilityPerUnitB1;
+      const FACILITY_PER_UNIT_59 = TYPE59.facilityPerUnitB1;
+
       const EXTRA_ABOVE_FAC      = cfg.extraAboveFacility;  // 단지당 지상 복리시설
-      const FACILITY_PER_UNIT_B1 = cfg.facilityPerUnitB1;   // 지하 시설/세대
       const PARKING_PER_CAR_B1   = cfg.parkingPerCarB1;     // 지하 주차장/대
 
-      // 4) 카테고리별 지상 복리시설 선점 후, 세대수 재산정 (후보정)
-      let gfaForUnits = gfaLimitAbove - EXTRA_ABOVE_FAC;
-      if (gfaForUnits < 0) gfaForUnits = 0;
+      // 84/59 비율
+      const r84 = ratio84 / 100;      // 0~1
+      const r59 = 1 - r84;
 
-      const units = Math.floor(gfaForUnits / ABOVE_PER_UNIT);
+      // 4) 84/59 혼합 세대당 지상연면적 (가중평균)
+      const ABOVE_PER_UNIT_WEIGHTED =
+        ABOVE_PER_UNIT_84 * r84 + ABOVE_PER_UNIT_59 * r59;
 
-      // 5) 실제 지상연면적 = 세대수 × 세대당 지상연면적 + 지상 복리시설
-      const gfaAbove = units * ABOVE_PER_UNIT + EXTRA_ABOVE_FAC;
+      // 5) 상가 고려 전, 1차 세대수
+      let units = ABOVE_PER_UNIT_WEIGHTED > 0
+        ? Math.floor((gfaLimitAbove - EXTRA_ABOVE_FAC) / ABOVE_PER_UNIT_WEIGHTED)
+        : 0;
+      if (units < 0) units = 0;
 
-      // 6) 지상부 실제 용적률
+      // 6) 단지 내 상가(100세대당 1호, 최소 3호, 40㎡/호)를 고려하여 반복 보정
+      let shopCount = 0;
+      let retailAreaAbove = 0;
+
+      for (let i = 0; i < 5; i++) {
+        shopCount = Math.max(3, Math.ceil(units / 100) - 1);
+        retailAreaAbove = shopCount * 40;  // 지상 상가 연면적
+
+        let gfaForUnits = gfaLimitAbove - EXTRA_ABOVE_FAC - retailAreaAbove;
+        if (gfaForUnits < 0) gfaForUnits = 0;
+
+        const newUnits = ABOVE_PER_UNIT_WEIGHTED > 0
+          ? Math.floor(gfaForUnits / ABOVE_PER_UNIT_WEIGHTED)
+          : 0;
+
+        if (newUnits === units) break;
+        units = newUnits;
+      }
+
+      // 7) 최종 세대 구성 (84/59 분배)
+      let units84 = Math.round(units * r84);
+      let units59 = units - units84;
+      if (units59 < 0) {
+        units59 = 0;
+      }
+
+      // 8) 지상연면적 (주거 + 지상 복리시설 + 상가)
+      const gfaAboveResidential =
+        units84 * ABOVE_PER_UNIT_84 + units59 * ABOVE_PER_UNIT_59;
+
+      const gfaAbove = gfaAboveResidential + EXTRA_ABOVE_FAC + retailAreaAbove;
+
+      // 9) 지상부 실제 용적률
       const farActual = (gfaAbove / siteArea) * 100;
 
-      // 7) 지하 시설연면적
-      const gfaB1Facility = units * FACILITY_PER_UNIT_B1;
+      // 10) 지하 시설연면적 (84/59 타입별 합산)
+      const gfaB1Facility =
+        units84 * FACILITY_PER_UNIT_84 + units59 * FACILITY_PER_UNIT_59;
 
-      // 8) 총 주차대수
+      // 11) 총 주차대수 및 지하 주차장 연면적
       const totalParking = Math.ceil(units * parkingPerUnit);
-
-      // 9) 지하 주차장 연면적
       const gfaB1Parking = totalParking * PARKING_PER_CAR_B1;
 
-      // 10) 지하 연면적 총합
+      // 12) 지하 연면적 총합
       const gfaBelow = gfaB1Facility + gfaB1Parking;
 
-      // 11) 전체 연면적
+      // 13) 전체 연면적
       const gfaTotal = gfaAbove + gfaBelow;
 
       return {
-        // 1차 추정값
-        gfaLimitAbove,
-        rawUnits,
-        categoryKey: cat.key,
-        categoryLabel: cat.label,
-        categoryRangeText: cat.rangeText,
-        // 후보정 값
-        units,
         gfaAbove,
         gfaBelow,
         gfaTotal,
         farActual,
+        units,
+        units84,
+        units59,
+        shopCount,
         totalParking,
-        cfg,
+        retailAreaAbove,   // 상가 면적
       };
     }
 
     function onClickCalculate() {
       const siteArea       = parseFloat(document.getElementById("siteArea").value);
-      const bcr            = parseFloat(document.getElementById("bcr").value);
+      const bcr            = parseFloat(document.getElementById("bcr").value); // 현재 계산에는 미사용
       const far            = parseFloat(document.getElementById("far").value);
       const parkingPerUnit = parseFloat(document.getElementById("parkingPerUnit").value);
+      const ratio84Input   = parseFloat(document.getElementById("ratio84").value);
       const resultDiv      = document.getElementById("result");
 
+      // 기본 유효성 검사 (대지, 용적률, 주차, 84비율만 필수)
       if ([siteArea, far, parkingPerUnit].some(v => isNaN(v))) {
         resultDiv.textContent = "대지면적, 용적률, 세대당 주차대수를 숫자로 입력해주세요.";
         return;
       }
+      if (siteArea <= 0) {
+        resultDiv.textContent = "대지면적은 0보다 큰 값이어야 합니다.";
+        return;
+      }
+      if (far <= 0) {
+        resultDiv.textContent = "용적률은 0보다 큰 값이어야 합니다.";
+        return;
+      }
 
-      const summary = calculateSummary({ siteArea, far, parkingPerUnit });
+      const ratio84 = isNaN(ratio84Input) ? 100 : ratio84Input;
+      if (ratio84 < 0 || ratio84 > 100) {
+        resultDiv.textContent = "84타입 비율은 0~100% 사이 값으로 입력해주세요.";
+        return;
+      }
 
-      const text =
-`▶ 1차 규모 판정 (용적률 기준, 84타입 가정)
-- 대지면적: ${formatNumber(siteArea, 1)} ㎡
-- 법정 용적률: ${far} %
-- 용적률 한도 지상연면적: 약 ${formatNumber(summary.gfaLimitAbove, 1)} ㎡
-- 84타입 기준 1차 추정 세대수(보정 전): 약 ${summary.rawUnits} 세대
-- 자동 분류 규모: ${summary.categoryRangeText} (${summary.categoryLabel})
+      const summary = calculateSummary({ siteArea, far, parkingPerUnit, ratio84 });
 
-▶ 산정 결과 (카테고리별 후보정 반영)
-- 지상연면적: 약 ${formatNumber(summary.gfaAbove, 1)} ㎡
-- 지하연면적: 약 ${formatNumber(summary.gfaBelow, 1)} ㎡
-- 전체연면적: 약 ${formatNumber(summary.gfaTotal, 1)} ㎡
-- 지상부 실제 용적률: 약 ${formatNumber(summary.farActual, 2)} %
-- 84타입 기준 세대수(후보정): 약 ${summary.units} 세대
-- 총 주차대수: 약 ${summary.totalParking} 대
+      // 각 항목별 텍스트 (㎡ + 평 병기)
+      const siteAreaText   = formatArea(siteArea);
+      const gfaAboveText   = formatArea(summary.gfaAbove);
+      const gfaBelowText   = formatArea(summary.gfaBelow);
+      const gfaTotalText   = formatArea(summary.gfaTotal);
 
-[사용한 가정값 (자동 분류된 규모 기준)]
-- 규모 구분: ${summary.categoryLabel}
-- 1세대당 지상연면적: ${summary.cfg.abovePerUnit} ㎡/세대
-- 단지당 지상 복리시설: ${summary.cfg.extraAboveFacility} ㎡
-- 지하 시설연면적: ${summary.cfg.facilityPerUnitB1} ㎡/세대
-- 지하 주차장 면적: ${summary.cfg.parkingPerCarB1} ㎡/대
+      const retailM2 = summary.retailAreaAbove || 0;
+      const retailPy = retailM2 / 3.3;
+      const retailText = `${formatNumberSmart(summary.shopCount)} 호실 (${formatNumberSmart(retailM2)} ㎡, ${formatNumberSmart(retailPy)} 평)`;
 
-※ 1차 세대수는 용적률 한도에서 단순 산출한 값이며,
-   실 설계에서는 지구단위계획, 조례, 평형 구성, 동 배치에 따라 달라질 수 있습니다.`;
+      const farText = `${formatNumberSmart(summary.farActual)} %`;
+      const parkingText = `${formatNumberSmart(summary.totalParking)} 대`;
 
-      resultDiv.textContent = text;
+
+      // 표 형태로 결과 출력
+      resultDiv.innerHTML = `
+<table style="width:100%; border-collapse:collapse; font-size:13px;">
+  <tbody>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">대지면적</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${siteAreaText}</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">지상연면적</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${gfaAboveText}</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">지하연면적</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${gfaBelowText}</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">전체연면적</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${gfaTotalText}</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">지상부 용적률</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${farText}</td>
+    </tr>
+
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">총 세대수</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${formatNumberSmart(summary.units)} 세대</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">84타입</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${formatNumberSmart(summary.units84)} 세대</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">59타입</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${formatNumberSmart(summary.units59)} 세대</td>
+    </tr>
+
+    <tr>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">단지 내 상가</th>
+      <td style="padding:4px 6px; border-bottom:1px solid #eee;">${retailText}</td>
+    </tr>
+    <tr>
+      <th style="text-align:left; padding:4px 6px;">총 주차대수</th>
+      <td style="padding:4px 6px;">${parkingText}</td>
+    </tr>
+  </tbody>
+</table>`;
     }
 
     document.addEventListener("DOMContentLoaded", function () {
       document.getElementById("calcBtn").addEventListener("click", onClickCalculate);
     });
   </script>
-</body>
-</html>
-
