@@ -81,12 +81,12 @@
 
   <div class="note">
     ※ 기본 가정<br>
-    - 84타입: 지상 112.5㎡/세대, 지하 시설 3.5~4.1㎡/세대 (주차면적 별도산정)<br>
-    - 59타입: 지상 82㎡/세대, 지하 시설 2.5㎡/세대 (주차면적 별도산정)<br>
+    - 84타입: 지상 112.0㎡/세대, 지하 시설 3.5~4.1㎡/세대 (주차면적 별도산정)<br>
+    - 59타입: 지상 80.5㎡/세대, 지하 시설 2.5㎡/세대 (주차면적 별도산정)<br>
     - 84타입 기준 세대수로 단지 규모등급을 3단계로 분류,<br>
       84/59 비율, 복리시설, 지하시설, 주차 효율, 단지 내 상가 면적을 반영해<br>
       지상·지하연면적·세대수·주차·상가호실을 후보정합니다.<br>
-    - 단지 내 상가: 100세대당 1호실, 최소 3호실, 전용 10평 + 공용부 = 40㎡/호 기준.<br>
+    - 단지 내 상가: 150세대당 1호실, 최소 3호실, 전용 10평 + 공용부 = 40㎡/호 기준.<br>
   </div>
 
   <button id="calcBtn">계산하기</button>
@@ -98,21 +98,21 @@
     const CATEGORY_CONFIG = {
       over800: {           // 800세대 이상
         label: "800세대 이상",
-        abovePerUnit: 112.5,
-        extraAboveFacility: 0,   // 단지당 지상 복리시설
+        abovePerUnit: 112.0,
+        extraAboveFacility: 100,   // 단지당 지상 복리시설
         facilityPerUnitB1: 4.1,  // 지하 시설/세대 (84 기준)
         parkingPerCarB1: 35.6,   // 지하 주차장/대
       },
       "500to800": {        // 500~800세대
         label: "500~800세대",
-        abovePerUnit: 112.5,
-        extraAboveFacility: 0,
+        abovePerUnit: 112.0,
+        extraAboveFacility: 200,
         facilityPerUnitB1: 3.8,
         parkingPerCarB1: 37.0,
       },
       under500: {          // 500세대 미만
         label: "500세대 미만",
-        abovePerUnit: 112.5,
+        abovePerUnit: 112.0,
         extraAboveFacility: 600,  // 단지당 지상 복리시설 600㎡
         facilityPerUnitB1: 3.5,
         parkingPerCarB1: 39.5,
@@ -121,7 +121,7 @@
 
     // 59타입 기본 가정
     const TYPE59 = {
-      abovePerUnit: 82,       // 지상 82㎡/세대
+      abovePerUnit: 80.5,    // 지상 80.5㎡/세대
       facilityPerUnitB1: 2.5, // 지하 시설 2.5㎡/세대 (주차 별도)
     };
 
@@ -147,7 +147,7 @@
     // 면적 포맷 (㎡ + 평 병기)
     function formatArea(m2) {
       if (m2 === null || m2 === undefined || isNaN(m2)) return "-";
-      const py = m2 / 3.3;  // 1평 ≒ 3.3㎡
+      const py = m2 / 3.305785;  // 1평 ≒ 3.3㎡
       return `${formatNumberSmart(m2)} ㎡ (${formatNumberSmart(py)} 평)`;
     }
 
@@ -166,8 +166,12 @@
     function calculateSummary(input) {
       const { siteArea, far, parkingPerUnit, ratio84 } = input;
 
-      // 1) 용적률 한도 내 이론상 지상연면적 (용적률 × 대지)
-      const gfaLimitAbove = siteArea * (far / 100); // ㎡
+  // ★ 용적률 여유치(0.2%) 적용
+      const FAR_MARGIN = 0.2;                         // 항상 뺄 여유치 (%)
+      const farEffective = Math.max(0, far - FAR_MARGIN);  // 내부 계산용 용적률 (%)
+
+  // 1) 용적률 한도 내 이론상 지상연면적 (용적률 × 대지)
+      const gfaLimitAbove = siteArea * (farEffective / 100); // ㎡
 
       // 2) 1차 추정 세대수 (카테고리 판정용, 전부 84타입 가정)
       const ABOVE_PER_UNIT_BASE = 112; // 84타입 기준
@@ -201,12 +205,12 @@
         : 0;
       if (units < 0) units = 0;
 
-      // 6) 단지 내 상가(100세대당 1호, 최소 3호, 40㎡/호)를 고려하여 반복 보정
+      // 6) 단지 내 상가(150세대당 1호, 최소 3호, 40㎡/호)를 고려하여 반복 보정
       let shopCount = 0;
       let retailAreaAbove = 0;
 
       for (let i = 0; i < 5; i++) {
-        shopCount = Math.max(3, Math.ceil(units / 100) - 1);
+        shopCount = Math.max(3, Math.ceil(units / 150) - 1);
         retailAreaAbove = shopCount * 40;  // 지상 상가 연면적
 
         let gfaForUnits = gfaLimitAbove - EXTRA_ABOVE_FAC - retailAreaAbove;
@@ -301,7 +305,7 @@
       const gfaTotalText   = formatArea(summary.gfaTotal);
 
       const retailM2 = summary.retailAreaAbove || 0;
-      const retailPy = retailM2 / 3.3;
+      const retailPy = retailM2 / 3.305785;
       const retailText = `${formatNumberSmart(summary.shopCount)} 호실 (${formatNumberSmart(retailM2)} ㎡, ${formatNumberSmart(retailPy)} 평)`;
 
       const farText = `${formatNumberSmart(summary.farActual)} %`;
@@ -338,11 +342,11 @@
       <td style="padding:4px 6px; border-bottom:1px solid #eee;">${formatNumberSmart(summary.units)} 세대</td>
     </tr>
     <tr>
-      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">84타입</th>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">  84타입</th>
       <td style="padding:4px 6px; border-bottom:1px solid #eee;">${formatNumberSmart(summary.units84)} 세대</td>
     </tr>
     <tr>
-      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">59타입</th>
+      <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #eee;">  59타입</th>
       <td style="padding:4px 6px; border-bottom:1px solid #eee;">${formatNumberSmart(summary.units59)} 세대</td>
     </tr>
 
